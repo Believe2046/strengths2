@@ -1,0 +1,429 @@
+
+(function () {
+  "use strict";
+
+  const DATA = window.APP_DATA;
+  const STORAGE_KEY = "gallup_static_answers_v1";
+  const POSITION_KEY = "gallup_static_position_v1";
+
+  const OPTIONS = [
+    { id: "A3", side: "A", value: 3, label: "非常同意 A", hint: "A 更符合我" },
+    { id: "A2", side: "A", value: 2, label: "比较同意 A", hint: "A 较符合我" },
+    { id: "C1", side: "C", value: 1, label: "居中", hint: "两边都像 / 难以判断" },
+    { id: "B2", side: "B", value: 2, label: "比较同意 B", hint: "B 较符合我" },
+    { id: "B3", side: "B", value: 3, label: "非常同意 B", hint: "B 更符合我" }
+  ];
+
+  const app = document.getElementById("app");
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function loadAnswers() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+      return typeof parsed === "object" && parsed !== null ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveAnswers(answers) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(answers));
+  }
+
+  function getCurrentIndex() {
+    const raw = Number(localStorage.getItem(POSITION_KEY));
+    if (Number.isFinite(raw) && raw >= 0 && raw < DATA.questions.length) return raw;
+    return 0;
+  }
+
+  function setCurrentIndex(index) {
+    const safe = Math.max(0, Math.min(DATA.questions.length - 1, index));
+    localStorage.setItem(POSITION_KEY, String(safe));
+  }
+
+  function answeredCount(answers) {
+    return DATA.questions.reduce((count, q) => count + (answers[q.id] ? 1 : 0), 0);
+  }
+
+  function percent(value, max) {
+    return max === 0 ? 0 : Math.round((value / max) * 100);
+  }
+
+  function goHome() {
+    location.hash = "#/";
+    render();
+  }
+
+  function goTest(index) {
+    if (typeof index === "number") setCurrentIndex(index);
+    location.hash = "#/test";
+    render();
+  }
+
+  function goResult() {
+    location.hash = "#/result";
+    render();
+  }
+
+  function resetAll() {
+    const ok = confirm("确定要清空所有答题记录并重新开始吗？此操作不可恢复。");
+    if (!ok) return;
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(POSITION_KEY);
+    goHome();
+  }
+
+  function renderHome() {
+    const answers = loadAnswers();
+    const done = answeredCount(answers);
+    const hasProgress = done > 0;
+    app.innerHTML = `
+      <section class="hero">
+        <p class="eyebrow">Static Assessment</p>
+        <h1>优势识别器测评</h1>
+        <p class="lead">
+          本网站根据上传 Excel 自动转换生成：共 ${DATA.questions.length} 题，一页一题，答题进度自动保存在当前浏览器。
+          完成后将生成前 5 优势、34 项完整排名，以及执行力、影响力、关系建立、战略思维四大才干主题排序。
+        </p>
+        <div class="grid grid-3">
+          <div class="info-card"><strong>一页一题</strong><span>每题在 A / 居中 / B 中选择最符合自己的倾向，移动端优先显示。</span></div>
+          <div class="info-card"><strong>自动保存</strong><span>刷新页面或关闭浏览器后，再次打开可继续答题。</span></div>
+          <div class="info-card"><strong>报告导出</strong><span>结果页支持导出图片和 PDF，便于保存或分享。</span></div>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="startBtn">${hasProgress ? "继续测评" : "开始测评"}</button>
+          <button class="btn ghost" id="resultBtn" ${done === 0 ? "disabled" : ""}>查看当前结果</button>
+          <button class="btn danger" id="resetBtn" ${done === 0 ? "disabled" : ""}>清空进度</button>
+        </div>
+        <p class="footer-note">当前已完成 ${done} / ${DATA.questions.length} 题。说明：本页面为静态网页，所有数据只保存在你的浏览器 localStorage 中，不会上传服务器。</p>
+      </section>
+    `;
+
+    document.getElementById("startBtn").addEventListener("click", () => goTest(getCurrentIndex()));
+    document.getElementById("resultBtn").addEventListener("click", goResult);
+    document.getElementById("resetBtn").addEventListener("click", resetAll);
+  }
+
+  function renderTopbar(index, answers) {
+    const done = answeredCount(answers);
+    const pct = percent(done, DATA.questions.length);
+    return `
+      <div class="topbar">
+        <div class="topbar-inner">
+          <button class="btn ghost" id="homeBtn">首页</button>
+          <div class="progress-wrap">
+            <div class="progress-meta"><span>第 ${index + 1} / ${DATA.questions.length} 题</span><span>${done} 题已答 · ${pct}%</span></div>
+            <div class="progress"><span style="width:${pct}%"></span></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderQuestion() {
+    const answers = loadAnswers();
+    const index = getCurrentIndex();
+    const q = DATA.questions[index];
+    const current = answers[q.id];
+
+    app.innerHTML = `
+      ${renderTopbar(index, answers)}
+      <section class="question-card">
+        <div class="question-no">题目 ${q.id}</div>
+        <div class="grid">
+          <div class="statement"><b>A</b><p>${escapeHtml(q.a)}</p></div>
+          <div class="statement"><b>B</b><p>${escapeHtml(q.b)}</p></div>
+        </div>
+
+        <div class="option-list" role="radiogroup" aria-label="选择答案">
+          ${OPTIONS.map(opt => `
+            <label class="option ${current && current.id === opt.id ? "selected" : ""}">
+              <input type="radio" name="answer" value="${opt.id}" ${current && current.id === opt.id ? "checked" : ""} />
+              <span><strong>${opt.label}</strong><br><small>${opt.hint}</small></span>
+            </label>
+          `).join("")}
+        </div>
+
+        <div class="nav-row">
+          <button class="btn ghost" id="prevBtn" ${index === 0 ? "disabled" : ""}>上一题</button>
+          <button class="btn primary" id="nextBtn">${index === DATA.questions.length - 1 ? "完成并查看结果" : "下一题"}</button>
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" id="firstUnansweredBtn">跳到未答题</button>
+          <button class="btn ghost" id="resultBtn">查看结果</button>
+          <span class="status-pill">✓ 已自动保存</span>
+        </div>
+      </section>
+    `;
+
+    document.getElementById("homeBtn").addEventListener("click", goHome);
+    document.getElementById("prevBtn").addEventListener("click", () => goTest(index - 1));
+    document.getElementById("resultBtn").addEventListener("click", goResult);
+    document.getElementById("firstUnansweredBtn").addEventListener("click", () => {
+      const first = DATA.questions.findIndex(item => !answers[item.id]);
+      goTest(first === -1 ? index : first);
+    });
+
+    document.querySelectorAll("input[name='answer']").forEach(input => {
+      input.addEventListener("change", () => {
+        const selected = OPTIONS.find(o => o.id === input.value);
+        if (!selected) return;
+        const nextAnswers = loadAnswers();
+        nextAnswers[q.id] = {
+          id: selected.id,
+          side: selected.side,
+          value: selected.value,
+          savedAt: new Date().toISOString()
+        };
+        saveAnswers(nextAnswers);
+        renderQuestion();
+      });
+    });
+
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      const latest = loadAnswers();
+      if (!latest[q.id]) {
+        alert("请先选择本题答案，再进入下一题。");
+        return;
+      }
+      if (index >= DATA.questions.length - 1) {
+        goResult();
+      } else {
+        goTest(index + 1);
+      }
+    });
+  }
+
+  function calculateResults(answers) {
+    const strengths = DATA.strengths.map(item => ({
+      ...item,
+      raw: 0,
+      score: 0
+    }));
+
+    const byName = Object.fromEntries(strengths.map(item => [item.name, item]));
+
+    for (const q of DATA.questions) {
+      const ans = answers[q.id];
+      if (!ans) continue;
+      const maps = DATA.scoringMatrix[q.id] || [];
+      for (const map of maps) {
+        const target = byName[map.strength];
+        if (!target) continue;
+
+        if (ans.side === "C" && map.center) {
+          target.raw += 1;
+        } else if (ans.side === map.side) {
+          target.raw += Number(ans.value || 0);
+        }
+      }
+    }
+
+    for (const item of strengths) {
+      item.score = item.denominator ? (item.raw / item.denominator) * 100 : 0;
+    }
+
+    strengths.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.raw !== a.raw) return b.raw - a.raw;
+      return a.name.localeCompare(b.name, "zh-Hans-CN");
+    });
+
+    const scoreMap = Object.fromEntries(strengths.map(s => [s.name, s]));
+    const themes = Object.entries(DATA.themes).map(([name, names]) => {
+      const raw = names.reduce((sum, s) => sum + (scoreMap[s]?.raw || 0), 0);
+      const score = names.reduce((sum, s) => sum + (scoreMap[s]?.score || 0), 0);
+      return { name, names, raw, score };
+    }).sort((a, b) => b.score - a.score);
+
+    return { strengths, themes };
+  }
+
+  function scoreText(score) {
+    return `${score.toFixed(1)}%`;
+  }
+
+  function renderResult() {
+    const answers = loadAnswers();
+    const done = answeredCount(answers);
+    const { strengths, themes } = calculateResults(answers);
+    const top5 = strengths.slice(0, 5);
+    const incomplete = done < DATA.questions.length;
+
+    app.innerHTML = `
+      <section class="result-shell">
+        <div class="actions">
+          <button class="btn ghost" id="backBtn">返回答题</button>
+          <button class="btn ghost" id="homeBtn">首页</button>
+          <button class="btn primary" id="exportImageBtn">导出图片</button>
+          <button class="btn primary" id="exportPdfBtn">导出 PDF</button>
+          <button class="btn danger" id="resetBtn">清空重做</button>
+        </div>
+
+        ${incomplete ? `<div class="notice">你当前完成 ${done} / ${DATA.questions.length} 题。结果已按当前答案计算；建议完成全部题目后再保存最终报告。</div>` : ""}
+
+        <article class="report" id="report">
+          <div class="report-header">
+            <div>
+              <p class="eyebrow">Assessment Report</p>
+              <h2>优势测评结果</h2>
+              <p class="lead">根据你的答题记录计算优势得分、完整排名和四大才干主题排序。</p>
+            </div>
+            <div class="status-pill">${done} / ${DATA.questions.length} 题</div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi"><strong>${top5[0]?.name || "-"}</strong><span>第一优势</span></div>
+            <div class="kpi"><strong>${themes[0]?.name || "-"}</strong><span>第一才干主题</span></div>
+            <div class="kpi"><strong>${scoreText(top5[0]?.score || 0)}</strong><span>最高标准化得分</span></div>
+          </div>
+
+          <section class="section">
+            <h3>前 5 优势</h3>
+            <div class="rank-list">
+              ${top5.map((item, idx) => `
+                <div class="rank-item">
+                  <div class="rank-head">
+                    <div><span class="badge">${idx + 1}</span><strong>${escapeHtml(item.name)}</strong></div>
+                    <span class="score">${scoreText(item.score)}</span>
+                  </div>
+                  <div class="bar"><span style="width:${Math.max(0, Math.min(100, item.score))}%"></span></div>
+                  <p class="desc">${escapeHtml(item.short)}</p>
+                  <details class="details">
+                    <summary>查看详细说明</summary>
+                    <p>${escapeHtml(item.detail)}</p>
+                  </details>
+                </div>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="section">
+            <h3>四大才干主题排序</h3>
+            <p class="desc">主题分 = 该主题包含优势的标准化得分总和，分数高者排在前面。</p>
+            <div class="theme-list">
+              ${themes.map((theme, idx) => `
+                <div class="theme-item">
+                  <div class="rank-head">
+                    <div><span class="badge">${idx + 1}</span><strong>${escapeHtml(theme.name)}</strong></div>
+                    <span class="score">${theme.score.toFixed(1)}</span>
+                  </div>
+                  <p class="desc">${theme.names.map(escapeHtml).join("、")}</p>
+                </div>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="section">
+            <h3>34 项完整排名</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>排名</th>
+                    <th>优势</th>
+                    <th>标准化得分</th>
+                    <th>原始分</th>
+                    <th>简要说明</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${strengths.map((item, idx) => `
+                    <tr>
+                      <td>${idx + 1}</td>
+                      <td><strong>${escapeHtml(item.name)}</strong></td>
+                      <td>${scoreText(item.score)}</td>
+                      <td>${item.raw} / ${item.denominator}</td>
+                      <td>${escapeHtml(item.short)}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <p class="footer-note">生成时间：${new Date().toLocaleString()}。本报告由静态网页在本地浏览器计算生成。</p>
+        </article>
+      </section>
+    `;
+
+    document.getElementById("backBtn").addEventListener("click", () => goTest(getCurrentIndex()));
+    document.getElementById("homeBtn").addEventListener("click", goHome);
+    document.getElementById("resetBtn").addEventListener("click", resetAll);
+    document.getElementById("exportImageBtn").addEventListener("click", exportImage);
+    document.getElementById("exportPdfBtn").addEventListener("click", exportPdf);
+  }
+
+  async function exportImage() {
+    const report = document.getElementById("report");
+    if (!window.html2canvas) {
+      alert("图片导出库尚未加载完成或网络不可用，请稍后重试。");
+      return;
+    }
+    const canvas = await window.html2canvas(report, {
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
+      backgroundColor: "#ffffff",
+      useCORS: true
+    });
+    const link = document.createElement("a");
+    link.download = `优势测评报告-${Date.now()}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }
+
+  async function exportPdf() {
+    const report = document.getElementById("report");
+    if (!window.html2canvas || !window.jspdf?.jsPDF) {
+      alert("PDF 导出库尚未加载完成或网络不可用，请稍后重试。");
+      return;
+    }
+
+    const canvas = await window.html2canvas(report, {
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
+      backgroundColor: "#ffffff",
+      useCORS: true
+    });
+
+    const imgData = canvas.toDataURL("image/jpeg", 0.96);
+    const pdf = new window.jspdf.jsPDF("p", "mm", "a4");
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    const imgWidth = pageWidth - margin * 2;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let y = margin;
+    let remaining = imgHeight;
+
+    pdf.addImage(imgData, "JPEG", margin, y, imgWidth, imgHeight);
+    remaining -= (pageHeight - margin * 2);
+
+    while (remaining > 0) {
+      pdf.addPage();
+      y = margin - (imgHeight - remaining);
+      pdf.addImage(imgData, "JPEG", margin, y, imgWidth, imgHeight);
+      remaining -= (pageHeight - margin * 2);
+    }
+
+    pdf.save(`优势测评报告-${Date.now()}.pdf`);
+  }
+
+  function render() {
+    const route = location.hash || "#/";
+    if (route.startsWith("#/test")) return renderQuestion();
+    if (route.startsWith("#/result")) return renderResult();
+    return renderHome();
+  }
+
+  window.addEventListener("hashchange", render);
+  render();
+})();
