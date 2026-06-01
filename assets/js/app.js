@@ -94,7 +94,7 @@
         <p class="eyebrow">Static Assessment</p>
         <h1>优势识别器测评</h1>
         <p class="lead">
-          本网站根据上传 Excel 自动转换生成：共 ${DATA.questions.length} 题，一页一题，答题进度自动保存在当前浏览器。
+          本网站根据Gallup-Strengths系统生成：共 ${DATA.questions.length} 题，一页一题，答题进度自动保存在当前浏览器。
           完成后将生成前 5 优势、34 项完整排名，以及执行力、影响力、关系建立、战略思维四大才干主题排序。
         </p>
 
